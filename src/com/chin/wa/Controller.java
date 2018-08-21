@@ -21,12 +21,12 @@ public class Controller {
      * @param args the command line arguments
      */
     public static void main(String[] args) throws SQLException, InterruptedException {
-        Configuration cf = Configuration.getInstance();
+//        Configuration cf = Configuration.getInstance();
         ConnectionManager cm = ConnectionManager.getInstance();
         selectData sd = new selectData();
         new Thread(sd).start();
-//        TwoWayChatProtocol tw = new TwoWayChatProtocol();
-//        tw.start();
+        TwoWayChatProtocol tw = new TwoWayChatProtocol();
+        tw.start();
     }
     
 }
@@ -35,7 +35,7 @@ class selectData extends Thread{
     private static Logger logger = Logger.getLogger(com.chin.wa.Controller.class);
     public void run(){
         while(true){
-            logger.info("Select From Table Messages");
+        logger.info("Select From Table Messages");
             try {
                 ConnectionManager cm = ConnectionManager.getInstance();
                 Connection conn = null;
