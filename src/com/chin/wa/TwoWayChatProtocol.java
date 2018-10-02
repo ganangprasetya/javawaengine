@@ -19,6 +19,8 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.Iterator;
 import java.util.logging.Level;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.apache.log4j.Logger;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -53,8 +55,10 @@ public class TwoWayChatProtocol extends Thread{
         long thirdid;
         String urlPath = "";
         Boolean fromMe;
+        String[] urlParameters = getAccount().split("=");
         while (true) {            
-            urlPath = "https://eu9.chat-api.com/instance9651/messages?token=dd0p452ij8x4zunj&lastMessageNumber=116";
+            urlPath = urlParameters[0]+"/messages?token="+urlParameters[1]+"&lastMessageNumber="+lastNum();
+//            logger.info(urlPath);
             URL url = new URL(urlPath);
             URLConnection con = url.openConnection();
             con.setRequestProperty("User-Agent", "Mozilla/5.0");
@@ -78,14 +82,16 @@ public class TwoWayChatProtocol extends Thread{
                 String authors = (String) innerObj.get("author");
                 String[] author = authors.split("@");
                 sendto = author[0];
-                sender = "6285213654343";
+                sender = urlParameters[2];
                 body = (String) innerObj.get("body");
                 sendername = (String) innerObj.get("senderName");
                 fromMe = (Boolean) innerObj.get("fromMe");
                 messageNumber = (long) innerObj.get("messageNumber");
                 if(fromMe == false){
                     if(checkMo((int) messageNumber) == 0){
-                        insertMo(sender, sendto,body,messageNumber,sendername);   
+                        StringBuffer message = removeUTFCharacters(body);
+                        String messageUnicode = message.toString();
+                        insertMo(sender, sendto,messageUnicode,messageNumber,sendername);   
                     }else{
                         logger.info("Select Messages MO");
                     }
@@ -95,7 +101,57 @@ public class TwoWayChatProtocol extends Thread{
         }
         
     }
-    
+    private int lastNum() throws SQLException{
+        String strSQL = "";
+        int lastNum = 0;
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        conn = ConnectionManager.getInstance().getConnection("core");
+        strSQL = "SELECT thirdid FROM messages_mo ORDER BY id DESC LIMIT 1";
+        ps = conn.prepareStatement(strSQL);
+        rs = ps.executeQuery();
+        while (rs.next()) {
+            lastNum = rs.getInt("thirdid");
+        } 
+        rs.close();
+        ps.close();
+        conn.close();
+        return lastNum-10;
+    }
+    private String getAccount() throws SQLException{
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        String sql = "";
+        String account_url = "";
+        String account_token = "";
+        String account_original = "";
+        conn = ConnectionManager.getInstance().getConnection("core");
+        sql = "SELECT * FROM ACCOUNT WHERE STATUS=1  LIMIT 1";
+        ps = conn.prepareStatement(sql);
+        rs = ps.executeQuery();
+        while (rs.next()) {
+            account_url = rs.getString("url");
+            account_token = rs.getString("token");
+            account_original = rs.getString("original");
+        }
+        ps.close();
+        rs.close();
+        conn.close();
+        return account_url+"="+account_token+"="+account_original;
+    }
+    public static StringBuffer removeUTFCharacters(String data){
+        Pattern p = Pattern.compile("\\\\u(\\p{XDigit}{4})");
+        Matcher m = p.matcher(data);
+        StringBuffer buf = new StringBuffer(data.length());
+        while (m.find()) {
+        String ch = String.valueOf((char) Integer.parseInt(m.group(1), 16));
+        m.appendReplacement(buf, Matcher.quoteReplacement(ch));
+        }
+        m.appendTail(buf);
+        return buf;
+    }
     private void insertMo(String sender, String sendto, String body, long thirdid, String sendername) throws SQLException, InterruptedException{
         Connection conn = null;
         logger.info(sendername);
@@ -166,7 +222,7 @@ public class TwoWayChatProtocol extends Thread{
             message = rs.getString("message");
             sendto = rs.getString("sender");
         }
-        compareKeyword(message,sendto);
+        compareKeyword(thirdid,message,sendto);
         rs.close();
         ps.close();
         conn.close();
@@ -192,7 +248,7 @@ public class TwoWayChatProtocol extends Thread{
         return message;
     }
     
-    private void compareKeyword(String keyword,String sendto) throws SQLException, InterruptedException{
+    private void compareKeyword(int thirdid,String keyword,String sendto) throws SQLException, InterruptedException{
         String strSQL = "";
         String message = "";
         int count = 0;
@@ -200,12 +256,22 @@ public class TwoWayChatProtocol extends Thread{
         PreparedStatement ps = null;
         ResultSet rs = null;
         conn = ConnectionManager.getInstance().getConnection("core");
+//        strSQL = "select * from keywords WHERE name LIKE '%"+keyword.toUpperCase()+"%'";
         strSQL = "select * from keywords WHERE word='"+keyword.toUpperCase()+"'";
         ps = conn.prepareStatement(strSQL);
         rs = ps.executeQuery();
         while (rs.next()) {
             ++count;
-            message = rs.getString("response");
+            int take_name = rs.getInt("take_name");
+            if(take_name == 1){
+                String[] response = rs.getString("response").split("\\.");
+//                logger.info(response[0]);
+                String name = takeName(thirdid);
+//                logger.info(name);
+                message = response[0]+" Mr/Mrs "+name+". "+response[1];
+            }else{
+                message = rs.getString("response");
+            }
         }
         if(count > 0 ){
             responseMessage(message,sendto);
@@ -215,6 +281,27 @@ public class TwoWayChatProtocol extends Thread{
         rs.close();
         ps.close();
         conn.close();
+    }
+    
+    private String takeName(int thirdid) throws SQLException{
+        String strSQL = "";
+        String sendername = "";
+        int count = 0;
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        conn = ConnectionManager.getInstance().getConnection("core");
+//        strSQL = "select * from keywords WHERE name LIKE '%"+keyword.toUpperCase()+"%'";
+        strSQL = "select sendername from messages_mo WHERE thirdid="+thirdid;
+        ps = conn.prepareStatement(strSQL);
+        rs = ps.executeQuery();
+        while (rs.next()) {
+            sendername = rs.getString("sendername");
+        }
+        rs.close();
+        ps.close();
+        conn.close();
+        return sendername;
     }
     
     private void responseMessage(String message, String sendto) throws SQLException{

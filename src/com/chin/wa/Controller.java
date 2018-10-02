@@ -9,6 +9,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import org.apache.log4j.Logger;
 
 /**
@@ -21,7 +24,7 @@ public class Controller {
      * @param args the command line arguments
      */
     public static void main(String[] args) throws SQLException, InterruptedException {
-//        Configuration cf = Configuration.getInstance();
+        Configuration cf = Configuration.getInstance();
         ConnectionManager cm = ConnectionManager.getInstance();
         selectData sd = new selectData();
         new Thread(sd).start();
@@ -37,6 +40,10 @@ class selectData extends Thread{
         while(true){
         logger.info("Select From Table Messages");
             try {
+                DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+                Date date = new Date();
+                Date expireddate = dateFormat.parse(dateFormat.format(date));
+                Date sendtime;
                 ConnectionManager cm = ConnectionManager.getInstance();
                 Connection conn = null;
                 conn = cm.getConnection("core");
@@ -47,11 +54,19 @@ class selectData extends Thread{
                 ps = conn.prepareStatement(strSQL);
                 rs = ps.executeQuery();
                 while (rs.next()) {
+                    String startdate = rs.getString("startdate");
                     int id = rs.getInt("id");
                     String message = rs.getString("message");
                     String phone = rs.getString("sendto");
                     int messagetype = rs.getInt("messagetype");
-                    cp.sendMessage(id,phone, message, messagetype);
+                    if(startdate == null){
+                        cp.sendMessage(id,phone, message, messagetype);
+                    }else{
+                        sendtime = dateFormat.parse(startdate);
+                        if (sendtime.equals(expireddate)) {
+                            cp.sendMessage(id,phone, message, messagetype);
+                        }
+                    }
                 }
                 rs.close();
                 ps.close();
